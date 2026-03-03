@@ -28,6 +28,9 @@ pub struct TaskControlBlock {
 
     /// Program break
     pub program_brk: usize,
+
+    /// System call counts
+    pub syscall_counts: [usize; 512],
 }
 
 impl TaskControlBlock {
@@ -63,6 +66,7 @@ impl TaskControlBlock {
             base_size: user_sp,
             heap_bottom: user_sp,
             program_brk: user_sp,
+            syscall_counts: [0; 512],
         };
         // prepare TrapContext in user space
         let trap_cx = task_control_block.get_trap_cx();
@@ -95,6 +99,11 @@ impl TaskControlBlock {
         } else {
             None
         }
+    }
+
+    /// Get mutable reference to memory set
+    pub fn inner_exclusive_access(&mut self) -> &mut Self {
+        self
     }
 }
 

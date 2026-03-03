@@ -125,6 +125,13 @@ impl From<VirtPageNum> for VirtAddr {
         Self(v.0 << PAGE_SIZE_BITS)
     }
 }
+
+impl core::ops::Add<usize> for VirtAddr {
+    type Output = Self;
+    fn add(self, rhs: usize) -> Self {
+        Self(self.0 + rhs)
+    }
+}
 impl PhysAddr {
     /// Get the (floor) physical page number
     pub fn floor(&self) -> PhysPageNum {

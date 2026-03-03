@@ -262,6 +262,48 @@ impl MemorySet {
             false
         }
     }
+
+    /// Map a new area
+    pub fn map_area(&mut self, start_va: VirtAddr, end_va: VirtAddr, permission: MapPermission) {
+        self.push(
+            MapArea::new(start_va, end_va, MapType::Framed, permission),
+            None,
+        );
+    }
+
+    /// Find a free area with given length
+    pub fn find_free_area(&self, len: usize) -> Option<VirtAddr> {
+        let mut current = VirtAddr::from(0x100000); // 1MB
+        let end = VirtAddr::from(0x80000000); // 2GB
+        
+        while current + len < end {
+            let mut overlap = false;
+            for area in &self.areas {
+                let area_start = area.vpn_range.get_start().into();
+                let area_end = area.vpn_range.get_end().into();
+                if (current < area_end) && (current + len > area_start) {
+                    overlap = true;
+                    current = area_end;
+                    break;
+                }
+            }
+            if !overlap {
+                return Some(current);
+            }
+        }
+        None
+    }
+
+    /// Unmap an area
+    pub fn unmap_area(&mut self, start_va: VirtAddr, end_va: VirtAddr) -> bool {
+        if let Some(index) = self.areas.iter().position(|area| area.contains(start_va, end_va)) {
+            let mut area = self.areas.remove(index);
+            area.unmap(&mut self.page_table);
+            true
+        } else {
+            false
+        }
+    }
 }
 /// map area structure, controls a contiguous piece of virtual memory
 pub struct MapArea {
@@ -355,6 +397,13 @@ impl MapArea {
             }
             current_vpn.step();
         }
+    }
+
+    /// Check if the area contains the given address range
+    pub fn contains(&self, start: VirtAddr, end: VirtAddr) -> bool {
+        let start_vpn = start.floor();
+        let end_vpn = end.ceil();
+        start_vpn >= self.vpn_range.get_start() && end_vpn <= self.vpn_range.get_end()
     }
 }
 
