@@ -275,7 +275,7 @@ impl MemorySet {
     pub fn find_free_area(&self, len: usize) -> Option<VirtAddr> {
         let mut current = VirtAddr::from(0x100000); // 1MB
         let end = VirtAddr::from(0x80000000); // 2GB
-        
+
         while current + len < end {
             let mut overlap = false;
             for area in &self.areas {
@@ -296,7 +296,11 @@ impl MemorySet {
 
     /// Unmap an area
     pub fn unmap_area(&mut self, start_va: VirtAddr, end_va: VirtAddr) -> bool {
-        if let Some(index) = self.areas.iter().position(|area| area.contains(start_va, end_va)) {
+        if let Some(index) = self
+            .areas
+            .iter()
+            .position(|area| area.contains(start_va, end_va))
+        {
             let mut area = self.areas.remove(index);
             area.unmap(&mut self.page_table);
             true

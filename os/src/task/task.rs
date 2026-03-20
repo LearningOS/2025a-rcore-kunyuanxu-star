@@ -86,13 +86,38 @@ impl TaskControlBlock {
         if new_brk < self.heap_bottom as isize {
             return None;
         }
+
         let result = if size < 0 {
+            // shrink heap
             self.memory_set
                 .shrink_to(VirtAddr(self.heap_bottom), VirtAddr(new_brk as usize))
-        } else {
-            self.memory_set
+        } else if size > 0 {
+            // expand heap
+            if !self
+                .memory_set
                 .append_to(VirtAddr(self.heap_bottom), VirtAddr(new_brk as usize))
+            {
+                // No existing heap area, create a new one
+                let start_va = VirtAddr(self.heap_bottom).floor();
+                let end_va = VirtAddr(new_brk as usize).ceil();
+                if start_va < end_va {
+                    self.memory_set.map_area(
+                        start_va.into(),
+                        end_va.into(),
+                        MapPermission::R | MapPermission::W | MapPermission::U,
+                    );
+                    true
+                } else {
+                    false
+                }
+            } else {
+                true
+            }
+        } else {
+            // size == 0, just query current break
+            true
         };
+
         if result {
             self.program_brk = new_brk as usize;
             Some(old_break)

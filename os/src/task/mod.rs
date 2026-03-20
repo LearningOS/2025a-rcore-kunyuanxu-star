@@ -155,19 +155,19 @@ impl TaskManager {
 
     /// Map memory area for current task
     pub fn mmap_current(&self, start: usize, len: usize, port: usize) -> isize {
-        use crate::mm::{VirtAddr, MapPermission};
-        
+        use crate::mm::{MapPermission, VirtAddr};
+
         // Calculate length aligned to page size
         let len = (len + 4095) & !4095;
         if len == 0 {
             return -1;
         }
-        
+
         // Get current memory set
         let mut inner = self.inner.exclusive_access();
         let current = inner.current_task;
         let memory_set = &mut inner.tasks[current].memory_set;
-        
+
         // Determine start address
         let start_va = if start == 0 {
             // Find free area
@@ -179,42 +179,48 @@ impl TaskManager {
             // Use specified address
             VirtAddr::from(start)
         };
-        
+
         // Convert port to MapPermission
         let mut perm = MapPermission::U;
-        if port & 1 != 0 { perm |= MapPermission::R; }
-        if port & 2 != 0 { perm |= MapPermission::W; }
-        if port & 4 != 0 { perm |= MapPermission::X; }
-        
+        if port & 1 != 0 {
+            perm |= MapPermission::R;
+        }
+        if port & 2 != 0 {
+            perm |= MapPermission::W;
+        }
+        if port & 4 != 0 {
+            perm |= MapPermission::X;
+        }
+
         // Map the area
         let end_va = start_va + len;
         memory_set.map_area(start_va, end_va, perm);
-        
+
         // Activate the new page table
         memory_set.activate();
-        
+
         start_va.0 as isize
     }
 
     /// Unmap memory area for current task
     pub fn munmap_current(&self, start: usize, len: usize) -> isize {
         use crate::mm::VirtAddr;
-        
+
         // Calculate length aligned to page size
         let len = (len + 4095) & !4095;
         if len == 0 {
             return -1;
         }
-        
+
         // Get current memory set
         let mut inner = self.inner.exclusive_access();
         let current = inner.current_task;
         let memory_set = &mut inner.tasks[current].memory_set;
-        
+
         // Unmap the area
         let start_va = VirtAddr::from(start);
         let end_va = start_va + len;
-        
+
         if memory_set.unmap_area(start_va, end_va) {
             // Activate the new page table
             memory_set.activate();
@@ -223,8 +229,6 @@ impl TaskManager {
             -1
         }
     }
-
-
 
     /// Switch current `Running` task to the task we have found,
     /// or there is no `Ready` task and we can exit with all applications completed

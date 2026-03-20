@@ -27,32 +27,32 @@ pub fn sys_yield() -> isize {
 /// HINT: What if [`TimeVal`] is splitted by two pages ?
 pub fn sys_get_time(ts: *mut TimeVal, _tz: usize) -> isize {
     trace!("kernel: sys_get_time");
-    use crate::timer::get_time_us;
     use crate::mm::translated_byte_buffer;
     use crate::task::current_user_token;
-    
+    use crate::timer::get_time_us;
+
     if ts.is_null() {
         return -1;
     }
-    
+
     let usec = get_time_us();
     let sec = usec / 1_000_000;
     let usec = usec % 1_000_000;
-    
+
     // Use translated_byte_buffer to safely access user memory
     let token = current_user_token();
     let ts_buffer = translated_byte_buffer(token, ts as *const u8, core::mem::size_of::<TimeVal>());
     if ts_buffer.is_empty() {
         return -1;
     }
-    
+
     // Write the time values
     unsafe {
         let ts_ptr = ts as *mut TimeVal;
         (*ts_ptr).sec = sec;
         (*ts_ptr).usec = usec;
     }
-    
+
     0
 }
 
@@ -60,10 +60,10 @@ pub fn sys_get_time(ts: *mut TimeVal, _tz: usize) -> isize {
 /// HINT: You might reimplement it with virtual memory management.
 pub fn sys_trace(trace_request: usize, id: usize, data: usize) -> isize {
     trace!("kernel: sys_trace");
-    use crate::task::TASK_MANAGER;
     use crate::mm::translated_byte_buffer;
     use crate::task::current_user_token;
-    
+    use crate::task::TASK_MANAGER;
+
     match trace_request {
         0 => {
             // Read from user memory
