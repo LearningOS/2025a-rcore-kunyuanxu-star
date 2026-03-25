@@ -4,7 +4,7 @@
 //!
 //! `UPSafeCell<OSInodeInner>` -> `OSInode`: for static `ROOT_INODE`,we
 //! need to wrap `OSInodeInner` into `UPSafeCell`
-use super::File;
+use super::{File, Stat, StatMode};
 use crate::drivers::BLOCK_DEVICE;
 use crate::mm::UserBuffer;
 use crate::sync::UPSafeCell;
@@ -53,6 +53,27 @@ impl OSInode {
         }
         v
     }
+    /// Get stat information for this inode
+    pub fn stat(&self) -> Stat {
+        let inner = self.inner.exclusive_access();
+        let inode = &inner.inode;
+        let ino = inode.inode_id() as u64;
+        let nlink = inode.nlink();
+        let mode = if inode.is_dir() {
+            StatMode::DIR.bits()
+        } else if inode.is_file() {
+            StatMode::FILE.bits()
+        } else {
+            StatMode::NULL.bits()
+        };
+        Stat {
+            dev: 0,
+            ino,
+            mode: StatMode::from_bits(mode).unwrap_or(StatMode::NULL),
+            nlink,
+            pad: [0; 7],
+        }
+    }
 }
 
 lazy_static! {
@@ -69,6 +90,25 @@ pub fn list_apps() {
         println!("{}", app);
     }
     println!("**************/");
+}
+
+/// Create a hard link to a file
+/// Returns 0 on success, -1 on failure
+pub fn link(old_name: &str, new_name: &str) -> isize {
+    // Find the old file
+    if let Some(inode) = ROOT_INODE.find(old_name) {
+        let inode_id = inode.inode_id();
+        // Create link in root directory
+        ROOT_INODE.link(new_name, inode_id)
+    } else {
+        -1
+    }
+}
+
+/// Remove a hard link to a file
+/// Returns 0 on success, -1 on failure
+pub fn unlink(name: &str) -> isize {
+    ROOT_INODE.unlink(name)
 }
 
 bitflags! {
@@ -155,5 +195,24 @@ impl File for OSInode {
             total_write_size += write_size;
         }
         total_write_size
+    }
+    fn stat(&self) -> Stat {
+        let inner = self.inner.exclusive_access();
+        let inode = &inner.inode;
+        let ino = inode.inode_id() as u64;
+        let (mode, nlink) = if inode.is_dir() {
+            (StatMode::DIR.bits(), 1)
+        } else if inode.is_file() {
+            (StatMode::FILE.bits(), 1)
+        } else {
+            (StatMode::NULL.bits(), 0)
+        };
+        Stat {
+            dev: 0,
+            ino,
+            mode: StatMode::from_bits(mode).unwrap_or(StatMode::NULL),
+            nlink,
+            pad: [0; 7],
+        }
     }
 }

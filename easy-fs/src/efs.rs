@@ -17,6 +17,13 @@ pub struct EasyFileSystem {
     data_area_start_block: u32,
 }
 
+impl EasyFileSystem {
+    /// Get the start block of inode area
+    pub fn inode_area_start_block(&self) -> u32 {
+        self.inode_area_start_block
+    }
+}
+
 type DataBlock = [u8; BLOCK_SZ];
 /// An easy fs over a block device
 impl EasyFileSystem {
