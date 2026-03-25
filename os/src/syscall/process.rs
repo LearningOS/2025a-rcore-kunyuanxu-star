@@ -2,10 +2,11 @@ use crate::{
     fs::{open_file, OpenFlags},
     mm::{translated_ref, translated_refmut, translated_str},
     task::{
-        current_process, current_task, current_user_token, exit_current_and_run_next, pid2process,
+        add_task, current_process, current_task, current_user_token, exit_current_and_run_next, pid2process,
         suspend_current_and_run_next, SignalFlags,
     },
 };
+use crate::timer::get_time_us;
 use alloc::{string::String, sync::Arc, vec::Vec};
 
 #[repr(C)]
@@ -151,34 +152,49 @@ pub fn sys_kill(pid: usize, signal: u32) -> isize {
 /// YOUR JOB: get time with second and microsecond
 /// HINT: You might reimplement it with virtual memory management.
 /// HINT: What if [`TimeVal`] is splitted by two pages ?
-pub fn sys_get_time(_ts: *mut TimeVal, _tz: usize) -> isize {
+pub fn sys_get_time(ts: *mut TimeVal, _tz: usize) -> isize {
     trace!(
-        "kernel:pid[{}] sys_get_time NOT IMPLEMENTED",
+        "kernel:pid[{}] sys_get_time",
         current_task().unwrap().process.upgrade().unwrap().getpid()
     );
-    -1
+    let time = get_time_us();
+    let sec = time / 1_000_000;
+    let usec = time % 1_000_000;
+    let token = current_user_token();
+    *translated_refmut(token, ts) = TimeVal { sec, usec };
+    0
 }
 
 /// mmap syscall
 ///
 /// YOUR JOB: Implement mmap.
-pub fn sys_mmap(_start: usize, _len: usize, _port: usize) -> isize {
+pub fn sys_mmap(start: usize, len: usize, port: usize) -> isize {
     trace!(
-        "kernel:pid[{}] sys_mmap NOT IMPLEMENTED",
+        "kernel:pid[{}] sys_mmap",
         current_task().unwrap().process.upgrade().unwrap().getpid()
     );
-    -1
+    if len == 0 {
+        return -1;
+    }
+    let process = current_process();
+    let mut inner = process.inner_exclusive_access();
+    inner.memory_set.mmap(start, len, port)
 }
 
 /// munmap syscall
 ///
 /// YOUR JOB: Implement munmap.
-pub fn sys_munmap(_start: usize, _len: usize) -> isize {
+pub fn sys_munmap(start: usize, len: usize) -> isize {
     trace!(
-        "kernel:pid[{}] sys_munmap NOT IMPLEMENTED",
+        "kernel:pid[{}] sys_munmap",
         current_task().unwrap().process.upgrade().unwrap().getpid()
     );
-    -1
+    if len == 0 {
+        return -1;
+    }
+    let process = current_process();
+    let mut inner = process.inner_exclusive_access();
+    inner.memory_set.munmap(start, len)
 }
 
 /// change data segment size
@@ -193,21 +209,53 @@ pub fn sys_munmap(_start: usize, _len: usize) -> isize {
 /// spawn syscall
 /// YOUR JOB: Implement spawn.
 /// HINT: fork + exec =/= spawn
-pub fn sys_spawn(_path: *const u8) -> isize {
+pub fn sys_spawn(path: *const u8) -> isize {
     trace!(
-        "kernel:pid[{}] sys_spawn NOT IMPLEMENTED",
+        "kernel:pid[{}] sys_spawn",
         current_task().unwrap().process.upgrade().unwrap().getpid()
     );
-    -1
+    let token = current_user_token();
+    let path_str = translated_str(token, path);
+    // open the file
+    if let Some(app_inode) = open_file(path_str.as_str(), OpenFlags::RDONLY) {
+        let all_data = app_inode.read_all();
+        // fork a new process
+        let current_process = current_process();
+        let new_process = current_process.fork();
+        let new_pid = new_process.getpid();
+        // modify trap context of new_process, because it returns immediately after switching
+        {
+            let new_process_inner = new_process.inner_exclusive_access();
+            let task = new_process_inner.tasks[0].as_ref().unwrap();
+            let trap_cx = task.inner_exclusive_access().get_trap_cx();
+            // for child process, fork returns 0 initially
+            trap_cx.x[10] = 0;
+        }
+        // now exec the new program in the child
+        let args_vec: Vec<String> = Vec::new();
+        new_process.exec(all_data.as_slice(), args_vec);
+        // add new process to scheduler
+        add_task(new_process.inner_exclusive_access().tasks[0].as_ref().unwrap().clone());
+        // parent returns child's pid
+        new_pid as isize
+    } else {
+        -1
+    }
 }
 
 /// set priority syscall
 ///
 /// YOUR JOB: Set task priority
-pub fn sys_set_priority(_prio: isize) -> isize {
+pub fn sys_set_priority(prio: isize) -> isize {
     trace!(
-        "kernel:pid[{}] sys_set_priority NOT IMPLEMENTED",
+        "kernel:pid[{}] sys_set_priority",
         current_task().unwrap().process.upgrade().unwrap().getpid()
     );
-    -1
+    if prio < 2 {
+        return -1;
+    }
+    let task = current_task().unwrap();
+    let mut task_inner = task.inner_exclusive_access();
+    task_inner.priority = prio as i32;
+    0
 }

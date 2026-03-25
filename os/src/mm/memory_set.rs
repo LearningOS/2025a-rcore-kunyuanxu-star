@@ -264,6 +264,33 @@ impl MemorySet {
         self.areas.clear();
     }
 
+    /// mmap: map a new area with given start address and permissions
+    /// returns the start address on success, 0 on failure
+    pub fn mmap(&mut self, start: usize, len: usize, port: usize) -> isize {
+        let start_va = VirtAddr(start);
+        let end_va = VirtAddr(start + len);
+        let mut map_perm = MapPermission::U;
+        if port & 0x1 != 0 {
+            map_perm |= MapPermission::R;
+        }
+        if port & 0x2 != 0 {
+            map_perm |= MapPermission::W;
+        }
+        if port & 0x4 != 0 {
+            map_perm |= MapPermission::X;
+        }
+        self.insert_framed_area(start_va, end_va, map_perm);
+        start as isize
+    }
+
+    /// munmap: unmap an area starting at the given address
+    pub fn munmap(&mut self, start: usize, _len: usize) -> isize {
+        let start_va = VirtAddr(start);
+        let start_vpn: VirtPageNum = start_va.floor();
+        self.remove_area_with_start_vpn(start_vpn);
+        0
+    }
+
     /// shrink the area to new_end
     #[allow(unused)]
     pub fn shrink_to(&mut self, start: VirtAddr, new_end: VirtAddr) -> bool {
