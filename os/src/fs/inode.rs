@@ -4,7 +4,7 @@
 //!
 //! `UPSafeCell<OSInodeInner>` -> `OSInode`: for static `ROOT_INODE`,we
 //! need to wrap `OSInodeInner` into `UPSafeCell`
-use super::File;
+use super::{File, Stat, StatMode};
 use crate::drivers::BLOCK_DEVICE;
 use crate::mm::UserBuffer;
 use crate::sync::UPSafeCell;
@@ -53,6 +53,34 @@ impl OSInode {
         }
         v
     }
+
+    /// Get inode statistics
+    pub fn stat(&self) -> Stat {
+        let inner = self.inner.exclusive_access();
+        let inode = &inner.inode;
+        let mode = if inode.is_dir() {
+            StatMode::DIR
+        } else {
+            StatMode::FILE
+        };
+        Stat {
+            dev: 1,
+            ino: inode.inode_id() as u64,
+            mode,
+            nlink: inode.nlink(),
+            pad: [0; 7],
+        }
+    }
+
+    /// Create a hard link
+    pub fn link(&self, name: &str, inode_id: u32) -> isize {
+        ROOT_INODE.link(name, inode_id)
+    }
+
+    /// Remove a hard link
+    pub fn unlink(&self, name: &str) -> isize {
+        ROOT_INODE.unlink(name)
+    }
 }
 
 lazy_static! {
@@ -69,6 +97,21 @@ pub fn list_apps() {
         println!("{}", app);
     }
     println!("**************/");
+}
+
+/// Create a hard link
+pub fn link(old_name: &str, new_name: &str) -> isize {
+    // find the old file first
+    if let Some(inode) = ROOT_INODE.find(old_name) {
+        ROOT_INODE.link(new_name, inode.inode_id())
+    } else {
+        -1
+    }
+}
+
+/// Remove a hard link
+pub fn unlink(name: &str) -> isize {
+    ROOT_INODE.unlink(name)
 }
 
 bitflags! {
@@ -155,5 +198,21 @@ impl File for OSInode {
             total_write_size += write_size;
         }
         total_write_size
+    }
+    fn stat(&self) -> Stat {
+        let inner = self.inner.exclusive_access();
+        let inode = &inner.inode;
+        let mode = if inode.is_dir() {
+            StatMode::DIR
+        } else {
+            StatMode::FILE
+        };
+        Stat {
+            dev: 1,
+            ino: inode.inode_id() as u64,
+            mode,
+            nlink: inode.nlink(),
+            pad: [0; 7],
+        }
     }
 }
